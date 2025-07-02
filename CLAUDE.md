@@ -4,54 +4,69 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`fip` is a portable POSIX-compliant shell utility that copies file contents or stdin to the system clipboard across Linux (X11/Wayland), macOS, and WSL.
+This repository contains **fip** and **fop** - two POSIX-compliant shell utilities for cross-platform clipboard operations:
+
+- **fip** (file in paste): Copy file contents or stdin to clipboard
+- **fop** (file out paste): Paste clipboard contents to stdout
+
+The tools automatically detect and use the appropriate clipboard backend for the current platform (Linux X11/Wayland, macOS, WSL).
 
 ## Development Commands
 
-### Running the Script
-```bash
-# Copy file contents to clipboard
-./fip filename
+### Testing
+The project uses manual testing with shell commands (no automated test framework):
 
-# Copy stdin to clipboard
-echo "text" | ./fip
-command | ./fip
+```bash
+# Test fip (copy to clipboard)
+echo "test" | ./fip && echo "✓ fip stdin test passed"
+echo "test" > /tmp/test.txt && ./fip /tmp/test.txt && echo "✓ fip file test passed"
+
+# Test fop (paste from clipboard) 
+echo "clipboard test" | ./fip
+[ "$(./fop)" = "clipboard test" ] && echo "✓ fop test passed"
+
+# Test round-trip functionality
+echo "round trip" | ./fip
+./fop > /tmp/roundtrip.txt
+[ "$(cat /tmp/roundtrip.txt)" = "round trip" ] && echo "✓ Round-trip test passed"
+
+# Test error handling
+./fip nonexistent.txt 2>/dev/null || echo "✓ fip error handling passed"
+./fop --invalid 2>/dev/null || echo "✓ fop error handling passed"
 ```
 
-### Making Script Executable
+### Installation
+Use the automated installer for deployment:
 ```bash
-chmod +x fip
+./install.sh
 ```
 
-### Testing Clipboard Functionality
-```bash
-# Test with a file
-echo "test content" > test.txt
-./fip test.txt
+## Architecture
 
-# Test with stdin
-echo "test from stdin" | ./fip
+### Core Components
 
-# Verify clipboard detection
-sh -c 'command -v wl-copy || command -v xclip || command -v pbcopy || (grep -qi microsoft /proc/version && command -v clip.exe) || echo "No clipboard tool found"'
-```
+1. **fip** (`/fip`): Input script that detects platform and copies to clipboard
+2. **fop** (`/fop`): Output script that detects platform and reads from clipboard  
+3. **install.sh**: Cross-platform installer with platform detection
 
-## Architecture Notes
+### Platform Detection Strategy
 
-This is a single-file utility with:
-- No build process or dependencies beyond system clipboard tools
-- Automatic clipboard backend detection in order: wl-copy → xclip → pbcopy → clip.exe
-- POSIX sh compliance for maximum portability
-- Error handling with `set -e` and informative error messages
+Both scripts use identical detection logic in this order:
+1. **wl-copy/wl-paste** (Wayland) - Modern Linux
+2. **xclip** (X11) - Traditional Linux  
+3. **pbcopy/pbpaste** (macOS) - Built-in macOS tools
+4. **clip.exe/powershell.exe** (WSL) - Windows Subsystem for Linux
 
-The script structure:
-1. Clipboard backend detection (lines 6-18)
-2. Input handling for file or stdin (lines 20-28)
-3. All clipboard commands are executed via shell variable expansion
+### Code Patterns
 
-## Key Implementation Details
+- **POSIX compliance**: Uses `#!/usr/bin/env sh` and avoids bash-specific features
+- **Error handling**: `set -e` for fail-fast behavior
+- **Security**: Uses `--` in commands to prevent option injection
+- **Portability**: Uses `command -v` for tool detection, `printf` over `echo`
 
-- Uses `command -v` for portable command detection
-- WSL detection via `/proc/version` grep pattern
-- Handles file arguments with `--` to prevent option injection
-- Exit codes: 0 for success, 1 for errors (missing clipboard tool or invalid usage)
+### Key Design Principles
+
+- Single-file executables with no dependencies
+- Extensive pedagogical comments explaining POSIX shell patterns
+- Cross-platform clipboard abstraction
+- Unified interface across different OS clipboard tools
