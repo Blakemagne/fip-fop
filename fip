@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+# fip — copy stdin or file contents to the system clipboard (Linux, macOS, WSL)
+
+set -e
+
+# Detect clipboard backend
+if command -v wl-copy >/dev/null 2>&1; then
+  CLIP_CMD="wl-copy"
+elif command -v xclip >/dev/null 2>&1; then
+  CLIP_CMD="xclip -selection clipboard"
+elif command -v pbcopy >/dev/null 2>&1; then
+  CLIP_CMD="pbcopy"
+elif grep -qi microsoft /proc/version && command -v clip.exe >/dev/null 2>&1; then
+  CLIP_CMD="clip.exe"
+else
+  printf >&2 "fip: no clipboard helper found (wl-copy, xclip, pbcopy, or clip.exe)\n"
+  exit 1
+fi
+
+# Input handling
+if [ "$#" -eq 0 ]; then
+  $CLIP_CMD
+elif [ "$#" -eq 1 ] && [ -f "$1" ]; then
+  cat -- "$1" | $CLIP_CMD
+else
+  printf >&2 "fip: usage: fip [file]\n"
+  exit 1
+fi
+
