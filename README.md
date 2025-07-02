@@ -25,9 +25,11 @@
 ### Quick Install
 
 ```bash
-# Download directly to your local bin
-curl -o ~/.local/bin/fip https://raw.githubusercontent.com/Blakemagne/fip/main/fip
-chmod +x ~/.local/bin/fip
+# One-line installer
+curl -fsSL https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
+
+# Or with wget
+wget -qO- https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
 ```
 
 ### Manual Install
