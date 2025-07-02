@@ -1,29 +1,92 @@
 #!/usr/bin/env sh
 # fip — copy stdin or file contents to the system clipboard (Linux, macOS, WSL)
+#
+# This script provides a unified interface for clipboard operations across different
+# Unix-like operating systems. It automatically detects and uses the appropriate
+# clipboard tool for the current environment.
 
+# Enable strict error handling
+# -e: Exit immediately if any command returns non-zero status
+# This ensures the script fails fast on errors instead of continuing with undefined behavior
 set -e
 
-# Detect clipboard backend
+# CLIPBOARD BACKEND DETECTION
+# The script checks for clipboard tools in order of preference:
+# 1. wl-copy (Wayland) - Modern Linux desktop protocol
+# 2. xclip (X11) - Traditional Linux windowing system
+# 3. pbcopy (macOS) - Apple's clipboard utility
+# 4. clip.exe (WSL) - Windows Subsystem for Linux integration
+
+# Check for Wayland clipboard tool
+# command -v: POSIX-compliant way to check if a command exists
+# >/dev/null 2>&1: Discard both stdout and stderr output
 if command -v wl-copy >/dev/null 2>&1; then
+  # wl-copy is part of wl-clipboard package for Wayland compositors
   CLIP_CMD="wl-copy"
+  
+# Check for X11 clipboard tool
 elif command -v xclip >/dev/null 2>&1; then
+  # xclip requires explicit selection of clipboard buffer
+  # -selection clipboard: Use the CLIPBOARD buffer (Ctrl+C/V) not PRIMARY (middle-click)
   CLIP_CMD="xclip -selection clipboard"
+  
+# Check for macOS clipboard tool
 elif command -v pbcopy >/dev/null 2>&1; then
+  # pbcopy is included by default on all macOS systems
   CLIP_CMD="pbcopy"
+  
+# Check for WSL (Windows Subsystem for Linux)
+# This is a two-part check:
+# 1. grep -qi microsoft /proc/version: Check if running under WSL
+#    -q: Quiet mode (no output)
+#    -i: Case-insensitive match
+#    /proc/version contains kernel version info, WSL kernels contain "microsoft"
+# 2. command -v clip.exe: Verify Windows clipboard tool is accessible
 elif grep -qi microsoft /proc/version && command -v clip.exe >/dev/null 2>&1; then
+  # clip.exe is the Windows clipboard utility, accessible from WSL
+  # Note: clip.exe only supports copying TO clipboard, not reading from it
   CLIP_CMD="clip.exe"
+  
+# No suitable clipboard tool found
 else
+  # printf is more portable than echo for error messages
+  # >&2: Redirect to stderr (file descriptor 2)
   printf >&2 "fip: no clipboard helper found (wl-copy, xclip, pbcopy, or clip.exe)\n"
+  # Exit with error status
   exit 1
 fi
 
-# Input handling
+# INPUT HANDLING
+# The script accepts input in two ways:
+# 1. No arguments: Read from stdin (pipe mode)
+# 2. One argument: Read from file
+
+# Check if no arguments provided (stdin mode)
+# $#: Number of positional parameters (arguments)
 if [ "$#" -eq 0 ]; then
+  # Execute the clipboard command directly
+  # The command will read from stdin by default
+  # Using variable expansion without quotes allows multi-word commands (e.g., "xclip -selection clipboard")
   $CLIP_CMD
+  
+# Check if exactly one argument provided and it's a regular file
+# -f: Test if argument is a regular file (not directory, device, etc.)
 elif [ "$#" -eq 1 ] && [ -f "$1" ]; then
+  # cat: Concatenate and output file contents
+  # --: End of options marker, prevents filenames starting with - from being interpreted as options
+  # $1: First positional parameter (the filename)
+  # |: Pipe operator sends cat output to clipboard command
   cat -- "$1" | $CLIP_CMD
+  
+# Invalid usage: wrong number of arguments or argument is not a file
 else
+  # Print usage message to stderr
   printf >&2 "fip: usage: fip [file]\n"
+  # Exit with error status
   exit 1
 fi
 
+# Script ends here
+# Exit status is determined by the last command executed:
+# - 0 if clipboard operation succeeded
+# - Non-zero if any command failed (due to set -e)
