@@ -32,7 +32,7 @@ elif command -v pbpaste >/dev/null 2>&1; then
 elif grep -qi microsoft /proc/version && command -v powershell.exe >/dev/null 2>&1; then
   # Use PowerShell to access Windows clipboard
   # Note: clip.exe only writes to clipboard, doesn't read
-  PASTE_CMD="powershell.exe -command Get-Clipboard"
+  PASTE_CMD="powershell.exe -NoProfile -Command Get-Clipboard"
   
 # No suitable clipboard tool found
 else

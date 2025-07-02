@@ -28,15 +28,19 @@ These tools provide a unified interface across different Unix-like operating sys
 
 ## Installation
 
-### Quick Install
+### Quick Install (Recommended)
+
+The installer automatically detects your platform, installs to the appropriate directory, and makes the tools globally available:
 
 ```bash
-# One-line installer (installs both fip and fop)
+# One-line installer (installs both fip and fop globally)
 curl -fsSL https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
 
 # Or with wget
 wget -qO- https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
 ```
+
+After installation, you can use `fip` and `fop` from anywhere without `./` prefix.
 
 ### Manual Install
 
@@ -158,6 +162,12 @@ fop | jq '.items[] | .name'
 
 # Count clipboard lines
 fop | wc -l
+
+# Use clipboard in commands (command substitution)
+echo "$(fop)"
+curl "$(fop)"
+ssh "$(fop)"
+cd "$(fop)"
 ```
 
 ## How It Works
@@ -176,7 +186,7 @@ Both tools automatically detect which clipboard utilities are available:
 1. **`wl-paste`** (Wayland) - Wayland clipboard reading
 2. **`xclip -out`** (X11) - X11 clipboard reading
 3. **`pbpaste`** (macOS) - Built into macOS
-4. **`powershell.exe`** (WSL) - Windows clipboard access
+4. **`powershell.exe Get-Clipboard`** (WSL) - Windows clipboard access
 
 ### Technical Details
 
