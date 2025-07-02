@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# fip installer script - installs fip to user's local bin directory
+# fip & fop installer script - installs clipboard utilities to user's local bin directory
 # Usage: curl -fsSL https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
 
 set -e
@@ -112,27 +112,43 @@ get_install_dir() {
     fi
 }
 
-# Download and install fip
-install_fip() {
-    REPO_URL="https://raw.githubusercontent.com/Blakemagne/fip/main/fip"
+# Download and install fip and fop
+install_tools() {
+    FIP_URL="https://raw.githubusercontent.com/Blakemagne/fip/main/fip"
+    FOP_URL="https://raw.githubusercontent.com/Blakemagne/fip/main/fop"
     
     info "Creating installation directory: $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
     
+    # Install fip
     info "Downloading fip..."
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$REPO_URL" -o "$INSTALL_DIR/fip"
+        curl -fsSL "$FIP_URL" -o "$INSTALL_DIR/fip"
     elif command -v wget >/dev/null 2>&1; then
-        wget -q "$REPO_URL" -O "$INSTALL_DIR/fip"
+        wget -q "$FIP_URL" -O "$INSTALL_DIR/fip"
     else
         error "Neither curl nor wget found. Please install one of them."
         exit 1
     fi
     
-    info "Setting executable permissions..."
+    info "Setting executable permissions for fip..."
     chmod +x "$INSTALL_DIR/fip"
-    
     success "fip installed to $INSTALL_DIR/fip"
+    
+    # Install fop
+    info "Downloading fop..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$FOP_URL" -o "$INSTALL_DIR/fop"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q "$FOP_URL" -O "$INSTALL_DIR/fop"
+    else
+        error "Neither curl nor wget found. Please install one of them."
+        exit 1
+    fi
+    
+    info "Setting executable permissions for fop..."
+    chmod +x "$INSTALL_DIR/fop"
+    success "fop installed to $INSTALL_DIR/fop"
 }
 
 # Add directory to PATH if needed
@@ -174,26 +190,29 @@ update_path() {
 
 # Verify installation
 verify_installation() {
-    if [ -z "$PATH_WARNING" ] && command -v fip >/dev/null 2>&1; then
+    if [ -z "$PATH_WARNING" ] && command -v fip >/dev/null 2>&1 && command -v fop >/dev/null 2>&1; then
         printf "\n"
-        success "Installation complete! You can now use 'fip' from anywhere."
+        success "Installation complete! You can now use 'fip' and 'fop' from anywhere."
         printf "\n"
         info "Try it out:"
-        printf "  ${GREEN}echo \"Hello, clipboard!\" | fip${RESET}\n"
-        printf "  ${GREEN}fip ~/.bashrc${RESET}\n"
+        printf "  ${GREEN}echo \"Hello, clipboard!\" | fip${RESET}     # Copy to clipboard\n"
+        printf "  ${GREEN}fop > output.txt${RESET}                   # Paste from clipboard to file\n"
+        printf "  ${GREEN}fip ~/.bashrc${RESET}                      # Copy file to clipboard\n"
+        printf "  ${GREEN}fop | grep \"pattern\"${RESET}               # Search clipboard contents\n"
     else
         printf "\n"
         success "Installation complete!"
         printf "\n"
-        info "To use fip, run:"
-        printf "  ${GREEN}$INSTALL_DIR/fip${RESET}\n"
+        info "To use the tools, run:"
+        printf "  ${GREEN}$INSTALL_DIR/fip${RESET}    # Copy to clipboard\n"
+        printf "  ${GREEN}$INSTALL_DIR/fop${RESET}    # Paste from clipboard\n"
     fi
 }
 
 # Main installation flow
 main() {
-    printf "${BLUE}fip installer${RESET}\n"
-    printf "=============\n\n"
+    printf "${BLUE}fip & fop installer${RESET}\n"
+    printf "===================\n\n"
     
     # Detect platform
     detect_platform
@@ -205,8 +224,8 @@ main() {
     # Get installation directory
     get_install_dir
     
-    # Install fip
-    install_fip
+    # Install both tools
+    install_tools
     
     # Update PATH if needed
     update_path

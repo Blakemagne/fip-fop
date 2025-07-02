@@ -1,0 +1,80 @@
+#!/usr/bin/env sh
+# fop — paste clipboard contents to stdout (Linux, macOS, WSL)
+#
+# This script provides a unified interface for reading clipboard contents
+# across different Unix-like operating systems. It outputs clipboard data
+# to stdout, allowing it to be piped to files or other commands.
+
+# Enable strict error handling
+set -e
+
+# CLIPBOARD BACKEND DETECTION
+# Check for clipboard tools in order of preference:
+# 1. wl-paste (Wayland) - Modern Linux desktop protocol
+# 2. xclip (X11) - Traditional Linux windowing system
+# 3. pbpaste (macOS) - Apple's clipboard utility
+# 4. powershell.exe (WSL) - Windows Subsystem for Linux integration
+
+# Check for Wayland clipboard tool
+if command -v wl-paste >/dev/null 2>&1; then
+  PASTE_CMD="wl-paste"
+  
+# Check for X11 clipboard tool
+elif command -v xclip >/dev/null 2>&1; then
+  # xclip requires explicit selection of clipboard buffer
+  PASTE_CMD="xclip -selection clipboard -out"
+  
+# Check for macOS clipboard tool
+elif command -v pbpaste >/dev/null 2>&1; then
+  PASTE_CMD="pbpaste"
+  
+# Check for WSL (Windows Subsystem for Linux)
+elif grep -qi microsoft /proc/version && command -v powershell.exe >/dev/null 2>&1; then
+  # Use PowerShell to access Windows clipboard
+  # Note: clip.exe only writes to clipboard, doesn't read
+  PASTE_CMD="powershell.exe -command Get-Clipboard"
+  
+# No suitable clipboard tool found
+else
+  printf >&2 "fop: no clipboard paste helper found (wl-paste, xclip, pbpaste, or powershell.exe)\n"
+  exit 1
+fi
+
+# INPUT HANDLING
+
+# Check for help flag
+if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
+  printf "fop - paste clipboard contents to stdout\n\n"
+  printf "Usage:\n"
+  printf "  fop                    Output clipboard contents\n"
+  printf "  fop > file             Write clipboard to file\n"
+  printf "  fop >> file            Append clipboard to file\n"
+  printf "  fop | command          Pipe clipboard to command\n"
+  printf "  fop -h, --help         Show this help message\n\n"
+  printf "Examples:\n"
+  printf "  fop > output.txt       Save clipboard to file\n"
+  printf "  fop >> notes.txt       Append clipboard to file\n"
+  printf "  fop | grep pattern     Search clipboard contents\n"
+  printf "  fop | wc -l            Count lines in clipboard\n"
+  printf "  fop | head -n 10       Show first 10 lines\n\n"
+  printf "Supported platforms:\n"
+  printf "  - Linux (X11/Wayland)\n"
+  printf "  - macOS\n"
+  printf "  - WSL (Windows Subsystem for Linux)\n\n"
+  printf "Sister tool:\n"
+  printf "  fip - Copy stdin or file contents to clipboard\n"
+  exit 0
+fi
+
+# Check if any arguments provided (invalid usage)
+if [ "$#" -gt 0 ]; then
+  printf >&2 "fop: usage: fop\n"
+  printf >&2 "Try 'fop --help' for more information.\n"
+  exit 1
+fi
+
+# Execute the paste command
+# Using variable expansion without quotes allows multi-word commands
+$PASTE_CMD
+
+# Exit status is determined by the paste command

@@ -1,6 +1,11 @@
-# fip — Universal Clipboard Tool
+# fip & fop — Universal Clipboard Utilities
 
-**fip** (file in paste) is a portable, POSIX-compliant shell utility for copying file contents or standard input to the system clipboard. It provides a unified interface across different Unix-like operating systems.
+**fip** (file in paste) and **fop** (file out paste) are portable, POSIX-compliant shell utilities for clipboard operations. Together they provide a complete clipboard workflow:
+
+- **fip**: Copy file contents or stdin TO the clipboard
+- **fop**: Paste clipboard contents TO stdout
+
+These tools provide a unified interface across different Unix-like operating systems.
 
 ## Features
 
@@ -8,24 +13,25 @@
 - **Zero dependencies**: Uses only built-in system clipboard tools
 - **POSIX compliant**: Written in portable shell script, works with any POSIX shell (sh, bash, dash, etc.)
 - **Smart detection**: Automatically finds and uses the appropriate clipboard tool
-- **Flexible input**: Accepts both file arguments and piped input
-- **Fast and lightweight**: Single file, no build process required
+- **Bidirectional**: Complete clipboard workflow with fip (copy) and fop (paste)
+- **Flexible I/O**: Supports files, stdin, stdout, and pipes
+- **Fast and lightweight**: Two single-file scripts, no build process required
 
 ## Supported Platforms
 
-| Platform | Clipboard Tool | Package Required |
-|----------|----------------|------------------|
-| Linux (Wayland) | `wl-copy` | `wl-clipboard` |
-| Linux (X11) | `xclip` | `xclip` |
-| macOS | `pbcopy` | Built-in |
-| WSL | `clip.exe` | Built-in |
+| Platform | Copy Tool | Paste Tool | Package Required |
+|----------|-----------|------------|------------------|
+| Linux (Wayland) | `wl-copy` | `wl-paste` | `wl-clipboard` |
+| Linux (X11) | `xclip` | `xclip` | `xclip` |
+| macOS | `pbcopy` | `pbpaste` | Built-in |
+| WSL | `clip.exe` | `powershell.exe` | Built-in |
 
 ## Installation
 
 ### Quick Install
 
 ```bash
-# One-line installer
+# One-line installer (installs both fip and fop)
 curl -fsSL https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
 
 # Or with wget
@@ -40,19 +46,19 @@ wget -qO- https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
    cd fip
    ```
 
-2. Make the script executable:
+2. Make the scripts executable:
    ```bash
-   chmod +x fip
+   chmod +x fip fop
    ```
 
 3. Copy to a directory in your PATH:
    ```bash
    # User installation (recommended)
    mkdir -p ~/.local/bin
-   cp fip ~/.local/bin/
+   cp fip fop ~/.local/bin/
 
    # System-wide installation (requires sudo)
-   sudo cp fip /usr/local/bin/
+   sudo cp fip fop /usr/local/bin/
    ```
 
 ### Package Manager Installation
@@ -71,63 +77,106 @@ wget -qO- https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
 
 ### Basic Usage
 
-Copy a file to clipboard:
+**Copy to clipboard (fip):**
 ```bash
+# Copy file contents
 fip filename.txt
-```
 
-Copy command output to clipboard:
-```bash
+# Copy command output
 ls -la | fip
+
+# Copy text
+echo "Hello, World!" | fip
+
+# Show help
+fip --help
 ```
 
-Copy text to clipboard:
+**Paste from clipboard (fop):**
 ```bash
-echo "Hello, World!" | fip
+# Output to terminal
+fop
+
+# Save to file
+fop > output.txt
+
+# Append to file
+fop >> notes.txt
+
+# Pipe to command
+fop | grep "search term"
+
+# Show help
+fop --help
 ```
 
 ### Real-World Examples
 
-Copy your SSH public key:
+**Clipboard Workflows:**
 ```bash
-fip ~/.ssh/id_rsa.pub
-```
+# Copy code, then append notes
+fip script.py
+echo "\n# Notes: Fixed bug in line 42" | fip
+fop > script-with-notes.py
 
-Copy the current directory path:
-```bash
+# Share command output
 pwd | fip
+# On another terminal:
+cd $(fop)
+
+# Quick file transfer between directories
+fip config.json
+cd /another/directory
+fop > config.json
 ```
 
-Copy a config file:
+**Common fip usage:**
 ```bash
-fip /etc/nginx/nginx.conf
-```
+# Copy SSH public key
+fip ~/.ssh/id_rsa.pub
 
-Copy git diff output:
-```bash
+# Copy current directory
+pwd | fip
+
+# Copy git diff
 git diff | fip
-```
 
-Copy system information:
-```bash
-uname -a | fip
-```
-
-Copy the last command from history:
-```bash
+# Copy last command
 history | tail -1 | fip
+```
+
+**Common fop usage:**
+```bash
+# Create file from clipboard
+fop > newfile.txt
+
+# Search clipboard contents
+fop | grep -n "TODO"
+
+# Process clipboard data
+fop | jq '.items[] | .name'
+
+# Count clipboard lines
+fop | wc -l
 ```
 
 ## How It Works
 
 ### Clipboard Detection
 
-`fip` automatically detects which clipboard tool is available on your system, checking in this order:
+Both tools automatically detect which clipboard utilities are available:
 
-1. **`wl-copy`** (Wayland) - For modern Linux desktops using Wayland
-2. **`xclip`** (X11) - For traditional Linux desktops using X Window System
+**fip (copy) checks for:**
+1. **`wl-copy`** (Wayland) - For modern Linux desktops
+2. **`xclip`** (X11) - For traditional Linux desktops
 3. **`pbcopy`** (macOS) - Built into macOS
-4. **`clip.exe`** (WSL) - For Linux running under Windows Subsystem for Linux
+4. **`clip.exe`** (WSL) - Windows clipboard access
+
+**fop (paste) checks for:**
+1. **`wl-paste`** (Wayland) - Wayland clipboard reading
+2. **`xclip -out`** (X11) - X11 clipboard reading
+3. **`pbpaste`** (macOS) - Built into macOS
+4. **`powershell.exe`** (WSL) - Windows clipboard access
 
 ### Technical Details
 
@@ -140,11 +189,16 @@ history | tail -1 | fip
 
 ### Script Structure
 
-1. **Shebang**: `#!/usr/bin/env sh` - Uses env to find sh for maximum portability
-2. **Error Mode**: `set -e` - Fail fast on any command error
+Both scripts follow the same pattern:
+
+1. **Shebang**: `#!/usr/bin/env sh` - Maximum portability
+2. **Error Mode**: `set -e` - Fail fast on errors
 3. **Detection**: Sequential checks for clipboard commands
-4. **Input Handling**: Determines whether to read from file or stdin
-5. **Execution**: Runs the appropriate clipboard command
+4. **Help Flag**: `-h` or `--help` shows usage
+5. **I/O Handling**: 
+   - fip: Reads from file or stdin
+   - fop: Writes to stdout only
+6. **Execution**: Runs the appropriate clipboard command
 
 ## Troubleshooting
 
@@ -195,12 +249,22 @@ If `clip.exe` isn't working in WSL:
 ### Running Tests
 
 ```bash
-# Basic functionality test
-echo "test" | ./fip && echo "✓ Stdin test passed"
-echo "test" > /tmp/test.txt && ./fip /tmp/test.txt && echo "✓ File test passed"
+# Test fip (copy)
+echo "test" | ./fip && echo "✓ fip stdin test passed"
+echo "test" > /tmp/test.txt && ./fip /tmp/test.txt && echo "✓ fip file test passed"
 
-# Error handling test
-./fip nonexistent.txt 2>/dev/null || echo "✓ Error handling test passed"
+# Test fop (paste)
+echo "clipboard test" | ./fip
+[ "$(./fop)" = "clipboard test" ] && echo "✓ fop test passed"
+
+# Test round-trip
+echo "round trip" | ./fip
+./fop > /tmp/roundtrip.txt
+[ "$(cat /tmp/roundtrip.txt)" = "round trip" ] && echo "✓ Round-trip test passed"
+
+# Error handling
+./fip nonexistent.txt 2>/dev/null || echo "✓ fip error handling passed"
+./fop --invalid 2>/dev/null || echo "✓ fop error handling passed"
 ```
 
 ### Contributing
@@ -225,12 +289,14 @@ echo "test" > /tmp/test.txt && ./fip /tmp/test.txt && echo "✓ File test passed
 - `cb` - Go-based clipboard manager
 - Platform-specific tools (`pbcopy`, `xclip`, etc.) directly
 
-## Why fip?
+## Why fip & fop?
 
-- **One command** for all platforms instead of remembering different tools
-- **No installation** of interpreters (Python, Node.js, etc.)
-- **Lightweight** - just 92 lines of well-commented shell script
-- **Educational** - Great example of portable shell scripting
+- **Unified commands** across all platforms instead of platform-specific tools
+- **Complete workflow** - both copy and paste operations
+- **No dependencies** - no interpreters (Python, Node.js, etc.) required
+- **Lightweight** - two small shell scripts, well-commented
+- **POSIX compliant** - works with any shell, not just bash
+- **Educational** - Great examples of portable shell scripting
 
 ## License
 

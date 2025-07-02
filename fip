@@ -61,13 +61,45 @@ fi
 # 1. No arguments: Read from stdin (pipe mode)
 # 2. One argument: Read from file
 
+# Check for help flag
+if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
+  printf "fip - copy stdin or file contents to the system clipboard\n\n"
+  printf "Usage:\n"
+  printf "  fip [file]         Copy file contents to clipboard\n"
+  printf "  command | fip      Copy command output to clipboard\n"
+  printf "  fip -h, --help     Show this help message\n\n"
+  printf "Examples:\n"
+  printf "  fip ~/.bashrc                Copy .bashrc to clipboard\n"
+  printf "  pwd | fip                    Copy current directory path\n"
+  printf "  ls -la | fip                 Copy directory listing\n"
+  printf "  cat file.txt | fip           Copy file via pipe\n"
+  printf "  echo \"Hello, World!\" | fip   Copy text to clipboard\n\n"
+  printf "Supported platforms:\n"
+  printf "  - Linux (X11/Wayland)\n"
+  printf "  - macOS\n"
+  printf "  - WSL (Windows Subsystem for Linux)\n"
+  exit 0
+fi
+
 # Check if no arguments provided (stdin mode)
 # $#: Number of positional parameters (arguments)
 if [ "$#" -eq 0 ]; then
-  # Execute the clipboard command directly
-  # The command will read from stdin by default
-  # Using variable expansion without quotes allows multi-word commands (e.g., "xclip -selection clipboard")
-  $CLIP_CMD
+  # Save stdin to a temporary variable to check if it's from a command
+  # Read stdin and copy to clipboard
+  if INPUT=$(cat); then
+    printf "%s" "$INPUT" | $CLIP_CMD
+    # Try to detect if input came from a known command
+    if [ ${#INPUT} -le 100 ]; then
+      # For short outputs, show a preview
+      printf >&2 "Copied: %s\n" "$INPUT"
+    else
+      # For long outputs, just show length
+      printf >&2 "Copied %d characters\n" ${#INPUT}
+    fi
+  else
+    printf >&2 "fip: failed to read stdin\n"
+    exit 1
+  fi
   
 # Check if exactly one argument provided and it's a regular file
 # -f: Test if argument is a regular file (not directory, device, etc.)
@@ -77,6 +109,8 @@ elif [ "$#" -eq 1 ] && [ -f "$1" ]; then
   # $1: First positional parameter (the filename)
   # |: Pipe operator sends cat output to clipboard command
   cat -- "$1" | $CLIP_CMD
+  # Print success message with filename to stderr
+  printf >&2 "Copied: %s\n" "$1"
   
 # Invalid usage: wrong number of arguments or argument is not a file
 else
