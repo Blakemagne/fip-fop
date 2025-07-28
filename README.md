@@ -234,11 +234,12 @@ Both scripts follow the same pattern:
 - Platform-specific tools (`pbcopy`, `xclip`, etc.) directly
 
 
-## License
-
-MIT License - see [LICENSE](LICENSE) file for details
-
 ## Author
 
 Created by Blakemagne 
 "stonks god"
+
+
+## License
+
+MIT License
