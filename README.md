@@ -7,6 +7,21 @@
 
 These tools provide a unified interface across different Unix-like operating systems.
 
+## Why fip & fop?
+
+- **Unified commands** across all platforms instead of platform-specific tools
+- **Complete workflow** - both copy and paste operations
+- **No dependencies** - no interpreters (Python, Node.js, etc.) required
+- **Lightweight** - two small shell scripts, well-commented
+- **POSIX compliant** - works with any shell, not just bash
+
+### Design Principles
+
+- **Minimalism**: Do one thing well
+- **Portability**: Work everywhere without modification
+- **Simplicity**: Readable, maintainable code
+- **No Dependencies**: Use only system tools
+
 ## Features
 
 - **Cross-platform**: Works on Linux (X11/Wayland), macOS, and Windows Subsystem for Linux
@@ -210,87 +225,6 @@ Both scripts follow the same pattern:
    - fop: Writes to stdout only
 6. **Execution**: Runs the appropriate clipboard command
 
-## Troubleshooting
-
-### No clipboard helper found
-
-If you see this error, install the appropriate clipboard tool for your system:
-
-**Linux (Wayland):**
-```bash
-# Debian/Ubuntu
-sudo apt install wl-clipboard
-
-# Fedora
-sudo dnf install wl-clipboard
-
-# Arch
-sudo pacman -S wl-clipboard
-```
-
-**Linux (X11):**
-```bash
-# Debian/Ubuntu
-sudo apt install xclip
-
-# Fedora
-sudo dnf install xclip
-
-# Arch
-sudo pacman -S xclip
-```
-
-### File not found
-
-Ensure the file path is correct and you have read permissions:
-```bash
-ls -l filename.txt
-```
-
-### WSL clipboard issues
-
-If `clip.exe` isn't working in WSL:
-1. Ensure you're running WSL2 (not WSL1)
-2. Try using the full path: `/mnt/c/Windows/System32/clip.exe`
-3. Check that Windows paths are accessible
-
-## Development
-
-### Running Tests
-
-```bash
-# Test fip (copy)
-echo "test" | ./fip && echo "✓ fip stdin test passed"
-echo "test" > /tmp/test.txt && ./fip /tmp/test.txt && echo "✓ fip file test passed"
-
-# Test fop (paste)
-echo "clipboard test" | ./fip
-[ "$(./fop)" = "clipboard test" ] && echo "✓ fop test passed"
-
-# Test round-trip
-echo "round trip" | ./fip
-./fop > /tmp/roundtrip.txt
-[ "$(cat /tmp/roundtrip.txt)" = "round trip" ] && echo "✓ Round-trip test passed"
-
-# Error handling
-./fip nonexistent.txt 2>/dev/null || echo "✓ fip error handling passed"
-./fop --invalid 2>/dev/null || echo "✓ fop error handling passed"
-```
-
-### Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Design Principles
-
-- **Minimalism**: Do one thing well
-- **Portability**: Work everywhere without modification
-- **Simplicity**: Readable, maintainable code
-- **No Dependencies**: Use only system tools
 
 ## Alternatives
 
@@ -299,14 +233,6 @@ echo "round trip" | ./fip
 - `cb` - Go-based clipboard manager
 - Platform-specific tools (`pbcopy`, `xclip`, etc.) directly
 
-## Why fip & fop?
-
-- **Unified commands** across all platforms instead of platform-specific tools
-- **Complete workflow** - both copy and paste operations
-- **No dependencies** - no interpreters (Python, Node.js, etc.) required
-- **Lightweight** - two small shell scripts, well-commented
-- **POSIX compliant** - works with any shell, not just bash
-- **Educational** - Great examples of portable shell scripting
 
 ## License
 
