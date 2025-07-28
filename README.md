@@ -221,8 +221,8 @@ Both scripts follow the same pattern:
 3. **Detection**: Sequential checks for clipboard commands
 4. **Help Flag**: `-h` or `--help` shows usage
 5. **I/O Handling**: 
-   - fip: Reads from file or stdin
-   - fop: Writes to stdout only
+   - `fip`: Reads from file or stdin
+   - `fop`: Writes to stdout only
 6. **Execution**: Runs the appropriate clipboard command
 
 
