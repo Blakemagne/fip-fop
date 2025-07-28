@@ -238,8 +238,3 @@ Both scripts follow the same pattern:
 
 Created by Blakemagne 
 "stonks god"
-
-
-## License
-
-MIT License
