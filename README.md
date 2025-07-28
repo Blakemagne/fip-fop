@@ -240,9 +240,5 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Author
 
-Created by Blakemagne "stonks god"
-
-## Acknowledgments
-
-- Inspired by the Unix philosophy: "Do one thing and do it well"
-- Thanks to the maintainers of `wl-clipboard`, `xclip`, and other clipboard tools
+Created by Blakemagne 
+"stonks god"
