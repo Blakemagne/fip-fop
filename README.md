@@ -7,21 +7,6 @@
 
 These tools provide a unified interface across different Unix-like operating systems.
 
-## Why `fip` & `fop`?
-
-- **Unified commands** across all platforms instead of platform-specific tools
-- **Complete workflow** - both copy and paste operations
-- **No dependencies** - no interpreters (Python, Node.js, etc.) required
-- **Lightweight** - two small shell scripts, well-commented
-- **POSIX compliant** - works with any shell, not just bash
-
-### Design Principles
-
-- **Minimalism**: Do one thing well
-- **Portability**: Work everywhere without modification
-- **Simplicity**: Readable, maintainable code
-- **No Dependencies**: Use only system tools
-
 ## Features
 
 - **Cross-platform**: Works on Linux (X11/Wayland), macOS, and Windows Subsystem for Linux
