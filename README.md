@@ -1,6 +1,6 @@
 # `fip` & `fop` — Universal Clipboard Utilities
 
-**`fip`** (file in paste) and **`fop`** (file out paste) are portable, POSIX-compliant shell utilities for clipboard operations. Together they provide a complete clipboard workflow:
+**`fip`** (file stdin) and **`fop`** (file stdout) are portable, POSIX-compliant shell utilities for clipboard operations. Together they provide a complete clipboard workflow:
 
 - **`fip`**: Copy file contents or stdin TO the clipboard
 - **`fop`**: Paste clipboard contents TO stdout
