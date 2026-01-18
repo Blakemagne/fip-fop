@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # fip & fop installer script - installs clipboard utilities to user's local bin directory
-# Usage: curl -fsSL https://raw.githubusercontent.com/Blakemagne/fip/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/Blakemagne/fip-fop/main/install.sh | sh
 
 set -e
 
@@ -114,8 +114,8 @@ get_install_dir() {
 
 # Download and install fip and fop
 install_tools() {
-    FIP_URL="https://raw.githubusercontent.com/Blakemagne/fip/main/fip"
-    FOP_URL="https://raw.githubusercontent.com/Blakemagne/fip/main/fop"
+    FIP_URL="https://raw.githubusercontent.com/Blakemagne/fip-fop/main/fip"
+    FOP_URL="https://raw.githubusercontent.com/Blakemagne/fip-fop/main/fop"
     
     info "Creating installation directory: $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
