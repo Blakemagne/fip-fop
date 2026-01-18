@@ -75,8 +75,21 @@ if [ "$#" -gt 0 ]; then
   exit 1
 fi
 
-# Execute the paste command
+# Execute the paste command and capture output
 # Using variable expansion without quotes allows multi-word commands
-$PASTE_CMD
+OUTPUT=$($PASTE_CMD)
 
-# Exit status is determined by the paste command
+# Output clipboard contents to stdout
+printf "%s" "$OUTPUT"
+
+# Show success message on stderr only when stdout is redirected (not a TTY)
+# -t 1: Test if file descriptor 1 (stdout) is a terminal
+if [ ! -t 1 ]; then
+  if [ ${#OUTPUT} -le 100 ]; then
+    # For short outputs, show a preview
+    printf >&2 "Pasted: %s\n" "$OUTPUT"
+  else
+    # For long outputs, just show length
+    printf >&2 "Pasted %d characters\n" ${#OUTPUT}
+  fi
+fi

@@ -1,11 +1,11 @@
 # `fip` & `fop` — Universal Clipboard Utilities
 
-**`fip`** (file stdin) and **`fop`** (file stdout) are portable, POSIX-compliant shell utilities for clipboard operations. Together they provide a complete clipboard workflow:
+**`fip`** (file in paste) and **`fop`** (file out paste) are portable, POSIX-compliant shell utilities for clipboard operations. Together they provide a complete clipboard workflow:
 
-- **`fip`**: Copy file contents or stdin TO the clipboard
-- **`fop`**: Paste clipboard contents TO stdout
+- **`fip`**: Copy file contents or stdin TO the clipboard (pipeline **sink**)
+- **`fop`**: Paste clipboard contents TO stdout (pipeline **source**)
 
-These tools provide a unified interface across different Unix-like operating systems.
+In Unix pipeline terms, `fip` is a **sink** (consumes data, terminal endpoint) and `fop` is a **source** (produces data, origin point). This design follows the Unix philosophy of doing one thing well and composing with other tools via pipes.
 
 ## Features
 
@@ -14,7 +14,7 @@ These tools provide a unified interface across different Unix-like operating sys
 - **POSIX compliant**: Written in portable shell script, works with any POSIX shell (sh, bash, dash, etc.)
 - **Smart detection**: Automatically finds and uses the appropriate clipboard tool
 - **Bidirectional**: Complete clipboard workflow with fip (copy) and fop (paste)
-- **Flexible I/O**: Supports files, stdin, stdout, and pipes
+- **Flexible I/O**: `fip` reads from files or stdin (sink), `fop` writes to stdout (source)
 - **Fast and lightweight**: Two single-file scripts, no build process required
 
 ## Supported Platforms
@@ -205,9 +205,9 @@ Both scripts follow the same pattern:
 2. **Error Mode**: `set -e` - Fail fast on errors
 3. **Detection**: Sequential checks for clipboard commands
 4. **Help Flag**: `-h` or `--help` shows usage
-5. **I/O Handling**: 
-   - `fip`: Reads from file or stdin
-   - `fop`: Writes to stdout only
+5. **I/O Handling**:
+   - `fip`: Reads from file or stdin, outputs nothing to stdout (sink — use at end of pipelines)
+   - `fop`: Ignores stdin, writes clipboard to stdout (source — use at start of pipelines)
 6. **Execution**: Runs the appropriate clipboard command
 
 
