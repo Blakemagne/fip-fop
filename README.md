@@ -118,9 +118,12 @@ fop --help
 
 **Clipboard Workflows:**
 ```bash
-# Copy code, then append notes
-fip script.py
-echo "\n# Notes: Fixed bug in line 42" | fip
+# Copy code together with notes.
+# Note there is no append semantic: a second `fip` REPLACES the clipboard, so the
+# two pieces have to be joined before they reach it. `printf` rather than `echo`
+# because `echo "\n"` prints a literal backslash-n in some shells and a newline in
+# others.
+{ cat script.py; printf '\n%s\n' '# Notes: Fixed bug in line 42'; } | fip
 fop > script-with-notes.py
 
 # Share command output

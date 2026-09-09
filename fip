@@ -4,64 +4,20 @@
 # This script provides a unified interface for clipboard operations across different
 # Unix-like operating systems. It automatically detects and uses the appropriate
 # clipboard tool for the current environment.
+#
+# DESIGN NOTE — why this script streams through a temp file instead of a shell
+# variable: an earlier version used `INPUT=$(cat)` and then piped "$INPUT" onward.
+# Command substitution strips ALL trailing newlines, and shell variables cannot hold
+# NUL bytes, so that approach silently corrupted anything that wasn't short ASCII
+# text. Streaming file -> clipboard keeps the byte stream exact.
 
 # Enable strict error handling
 # -e: Exit immediately if any command returns non-zero status
-# This ensures the script fails fast on errors instead of continuing with undefined behavior
 set -e
 
-# CLIPBOARD BACKEND DETECTION
-# The script checks for clipboard tools in order of preference:
-# 1. wl-copy (Wayland) - Modern Linux desktop protocol
-# 2. xclip (X11) - Traditional Linux windowing system
-# 3. pbcopy (macOS) - Apple's clipboard utility
-# 4. clip.exe (WSL) - Windows Subsystem for Linux integration
-
-# Check for Wayland clipboard tool
-# command -v: POSIX-compliant way to check if a command exists
-# >/dev/null 2>&1: Discard both stdout and stderr output
-if command -v wl-copy >/dev/null 2>&1; then
-  # wl-copy is part of wl-clipboard package for Wayland compositors
-  CLIP_CMD="wl-copy"
-  
-# Check for X11 clipboard tool
-elif command -v xclip >/dev/null 2>&1; then
-  # xclip requires explicit selection of clipboard buffer
-  # -selection clipboard: Use the CLIPBOARD buffer (Ctrl+C/V) not PRIMARY (middle-click)
-  CLIP_CMD="xclip -selection clipboard"
-  
-# Check for macOS clipboard tool
-elif command -v pbcopy >/dev/null 2>&1; then
-  # pbcopy is included by default on all macOS systems
-  CLIP_CMD="pbcopy"
-  
-# Check for WSL (Windows Subsystem for Linux)
-# This is a two-part check:
-# 1. grep -qi microsoft /proc/version: Check if running under WSL
-#    -q: Quiet mode (no output)
-#    -i: Case-insensitive match
-#    /proc/version contains kernel version info, WSL kernels contain "microsoft"
-# 2. command -v clip.exe: Verify Windows clipboard tool is accessible
-elif grep -qi microsoft /proc/version && command -v clip.exe >/dev/null 2>&1; then
-  # clip.exe is the Windows clipboard utility, accessible from WSL
-  # Note: clip.exe only supports copying TO clipboard, not reading from it
-  CLIP_CMD="clip.exe"
-  
-# No suitable clipboard tool found
-else
-  # printf is more portable than echo for error messages
-  # >&2: Redirect to stderr (file descriptor 2)
-  printf >&2 "fip: no clipboard helper found (wl-copy, xclip, pbcopy, or clip.exe)\n"
-  # Exit with error status
-  exit 1
-fi
-
-# INPUT HANDLING
-# The script accepts input in two ways:
-# 1. No arguments: Read from stdin (pipe mode)
-# 2. One argument: Read from file
-
-# Check for help flag
+# HELP
+# Handled before backend detection so `fip --help` works even on a machine with no
+# clipboard tool installed.
 if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
   printf "fip - copy stdin or file contents to the system clipboard\n\n"
   printf "Usage:\n"
@@ -74,6 +30,9 @@ if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
   printf "  ls -la | fip                 Copy directory listing\n"
   printf "  cat file.txt | fip           Copy file via pipe\n"
   printf "  echo \"Hello, World!\" | fip   Copy text to clipboard\n\n"
+  printf "Exit status:\n"
+  printf "  0  copied successfully (including a deliberate empty copy)\n"
+  printf "  1  unreadable input, or no clipboard helper found\n\n"
   printf "Supported platforms:\n"
   printf "  - Linux (X11/Wayland)\n"
   printf "  - macOS\n"
@@ -81,46 +40,161 @@ if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
   exit 0
 fi
 
-# Check if no arguments provided (stdin mode)
-# $#: Number of positional parameters (arguments)
-if [ "$#" -eq 0 ]; then
-  # Save stdin to a temporary variable to check if it's from a command
-  # Read stdin and copy to clipboard
-  if INPUT=$(cat); then
-    printf "%s" "$INPUT" | $CLIP_CMD
-    # Try to detect if input came from a known command
-    if [ ${#INPUT} -le 100 ]; then
-      # For short outputs, show a preview
-      printf >&2 "Copied: %s\n" "$INPUT"
-    else
-      # For long outputs, just show length
-      printf >&2 "Copied %d characters\n" ${#INPUT}
-    fi
-  else
-    printf >&2 "fip: failed to read stdin\n"
-    exit 1
-  fi
-  
-# Check if exactly one argument provided and it's a regular file
-# -f: Test if argument is a regular file (not directory, device, etc.)
-elif [ "$#" -eq 1 ] && [ -f "$1" ]; then
-  # cat: Concatenate and output file contents
-  # --: End of options marker, prevents filenames starting with - from being interpreted as options
-  # $1: First positional parameter (the filename)
-  # |: Pipe operator sends cat output to clipboard command
-  cat -- "$1" | $CLIP_CMD
-  # Print success message with filename to stderr
-  printf >&2 "Copied: %s\n" "$1"
-  
-# Invalid usage: wrong number of arguments or argument is not a file
+# CLIPBOARD BACKEND DETECTION
+#
+# Gated on the environment variable that proves the transport actually exists,
+# because an installed binary proves nothing about which display server is
+# reachable. wl-clipboard ships as a dependency of desktop meta-packages on most
+# distros, so it is routinely present in an X11 session, on a bare TTY, and over
+# SSH — where it is selected, hard-fails, and (as an if/elif chain) never falls
+# through to the xclip branch that would have worked.
+#
+# The ungated tail is deliberate: wl-copy falls back to $XDG_RUNTIME_DIR/wayland-0
+# when WAYLAND_DISPLAY is unset (cron, systemd user units, `sudo -i`, a tmux server
+# started before the compositor), so a bare gate would regress those. Every
+# installed helper is still reachable by some branch; nothing that works today stops.
+#
+# CLIP_CMD holds only literal words chosen here — never external data — so leaving
+# it unquoted at the call site is safe. (fop cannot do this: its wl-paste arguments
+# include an attacker-controlled MIME type, so it carries argv in "$@" instead.)
+if [ -n "$WAYLAND_DISPLAY" ] && command -v wl-copy >/dev/null 2>&1; then
+  CLIP_CMD="wl-copy"
+elif [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then
+  # -selection clipboard: Use the CLIPBOARD buffer (Ctrl+C/V) not PRIMARY (middle-click)
+  CLIP_CMD="xclip -selection clipboard"
+elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then
+  # -b: the CLIPBOARD selection, -i: read from stdin
+  CLIP_CMD="xsel -b -i"
+elif command -v pbcopy >/dev/null 2>&1; then
+  CLIP_CMD="pbcopy"
+elif grep -qi microsoft /proc/version 2>/dev/null && command -v clip.exe >/dev/null 2>&1; then
+  # clip.exe only supports copying TO the clipboard, not reading from it
+  CLIP_CMD="clip.exe"
+elif command -v wl-copy >/dev/null 2>&1; then
+  CLIP_CMD="wl-copy"
+elif command -v xclip >/dev/null 2>&1; then
+  CLIP_CMD="xclip -selection clipboard"
+elif command -v xsel >/dev/null 2>&1; then
+  CLIP_CMD="xsel -b -i"
 else
-  # Print usage message to stderr
-  printf >&2 "fip: usage: fip [file]\n"
-  # Exit with error status
+  printf >&2 "fip: no clipboard helper found (wl-copy, xclip, xsel, pbcopy, or clip.exe)\n"
   exit 1
 fi
 
-# Script ends here
-# Exit status is determined by the last command executed:
-# - 0 if clipboard operation succeeded
-# - Non-zero if any command failed (due to set -e)
+# TEMP FILE SETUP
+# Everything is staged here so the byte stream reaching the clipboard is identical
+# to what came in, and so we can report the size without re-reading stdin.
+# HUP and QUIT are in the trap because dash and busybox ash do NOT run the EXIT trap
+# on an untrapped fatal signal, so closing the terminal while fip is blocked reading
+# stdin would leave the staged content on disk. bash happens to run it, which is why
+# this is easy to miss on a system where /bin/sh is bash.
+TMP=$(mktemp "${TMPDIR:-/tmp}/fip.XXXXXX")
+ERR=$(mktemp "${TMPDIR:-/tmp}/fip.err.XXXXXX")
+trap 'rm -f "$TMP" "$ERR"' EXIT HUP INT QUIT TERM
+
+# INPUT HANDLING
+# Two modes: no arguments reads stdin, one argument reads that file.
+if [ "$#" -eq 0 ]; then
+  # Reading a terminal silently is normal filter convention, but this tool always
+  # speaks up on stderr, and a bare `fip` (a one-vowel slip from `fop`) otherwise
+  # just appears to hang — and a reflexive Ctrl-D then empties the clipboard.
+  if [ -t 0 ]; then
+    printf >&2 "fip: reading from terminal (Ctrl-D to finish, Ctrl-C to cancel)\n"
+  fi
+  cat > "$TMP"
+  SOURCE=""
+elif [ "$#" -eq 1 ]; then
+  # Diagnose the argument specifically. A mistyped filename is the most common
+  # error with a one-argument tool, and reporting it as "you called the tool wrong"
+  # sends the user to the wrong place entirely.
+  #
+  # Deliberately NOT `[ -f ]`: that is true only for regular files, so it rejected
+  # FIFOs and /dev/fd entries, breaking `fip <(git diff)` and making
+  # `echo x | fip /dev/stdin` fail while `fip /dev/stdin < file` succeeded.
+  case "$1" in
+    -*)
+      # A leading-dash argument that is not a real file is a mistyped flag
+      if [ ! -e "$1" ]; then
+        printf >&2 "fip: unknown option: %s\n" "$1"
+        printf >&2 "fip: usage: fip [file]\n"
+        exit 1
+      fi
+      ;;
+  esac
+  if [ -d "$1" ]; then
+    printf >&2 "fip: %s: is a directory\n" "$1"
+    exit 1
+  fi
+  # Both tests are needed: -r alone is false for a missing file AND an unreadable
+  # one, which would re-merge the two failures this is meant to separate. -e is
+  # correctly false for a dangling symlink, which lands on "no such file".
+  if [ ! -e "$1" ]; then
+    printf >&2 "fip: %s: no such file\n" "$1"
+    exit 1
+  fi
+  if [ ! -r "$1" ]; then
+    printf >&2 "fip: %s: permission denied\n" "$1"
+    exit 1
+  fi
+  # --: End of options marker, so filenames starting with - are not read as flags
+  cat -- "$1" > "$TMP"
+  SOURCE="$1"
+else
+  printf >&2 "fip: usage: fip [file]\n"
+  exit 1
+fi
+
+# SEND TO CLIPBOARD
+#
+# CRITICAL — the >/dev/null 2>"$ERR" redirect is not cosmetic. On Wayland the
+# clipboard is owned by a live client, so wl-copy forks a daemon that stays resident
+# to serve the data on request. That daemon inherits whatever stdout/stderr fip was
+# given. If fip's output is a pipe (`fip | something`, or a `$(fip)` capture), the
+# daemon holds the write end open forever and the reader never sees EOF — the caller
+# hangs indefinitely. xclip and xsel daemonize the same way. Redirecting to /dev/null
+# and a regular file severs that inheritance; a file descriptor pointed at a regular
+# file blocks no one, which is why stderr can still be captured and reported below.
+# This never happened on WSL/macOS because clip.exe and pbcopy exit immediately.
+if ! $CLIP_CMD < "$TMP" >/dev/null 2>"$ERR"; then
+  printf >&2 "fip: clipboard copy failed\n"
+  # Surface the backend's own error message if it produced one.
+  # An `if` rather than `[ ... ] && ...` for the reason documented in CLAUDE.md:
+  # a failing test makes the whole list non-zero, which under `set -e` would exit
+  # here. Harmless today because `exit 1` follows either way, but the codebase
+  # should not contain the pattern it warns against.
+  if [ -s "$ERR" ]; then cat "$ERR" >&2; fi
+  exit 1
+fi
+
+# FEEDBACK
+# Reported on stderr so it never pollutes a pipeline's data stream.
+BYTES=$(wc -c < "$TMP" | tr -d ' ')
+
+# Detect binary content by checking whether stripping NUL bytes changes the length.
+# Previews are only meaningful for text, and dumping binary to a terminal is hostile.
+STRIPPED=$(LC_ALL=C tr -d '\000' < "$TMP" | wc -c | tr -d ' ')
+
+if [ -n "$SOURCE" ]; then
+  printf >&2 "Copied: %s (%s bytes)\n" "$SOURCE" "$BYTES"
+elif [ "$BYTES" -eq 0 ]; then
+  # Without this the -le 100 branch prints a bare "Copied: " with no newline and
+  # glues the shell prompt to it, while silently emptying the clipboard. Routine
+  # trigger: `grep TODO file | fip` with no match. Exit status stays 0 — wiping the
+  # clipboard on purpose is legitimate and must not start failing under `set -e`.
+  printf >&2 "fip: input was empty, clipboard is now empty\n"
+elif [ "$BYTES" -ne "$STRIPPED" ]; then
+  printf >&2 "Copied %s bytes (binary)\n" "$BYTES"
+elif [ "$BYTES" -le 100 ] && [ -t 2 ]; then
+  # The content preview is gated on stderr being a TERMINAL. These tools routinely
+  # carry passwords (otw-cli pipes wargame passwords through them), and an ungated
+  # preview writes the payload verbatim into terminal scrollback, script/asciinema
+  # recordings, tmux capture-pane, and CI logs. Redirected stderr still gets the
+  # byte-count confirmation below; interactive use is unchanged.
+  printf >&2 "Copied: "
+  cat "$TMP" >&2
+  # An `if` rather than `&& printf`: as the script's last command, a failing
+  # `[ ... ] && ...` list would make fip itself exit non-zero.
+  if [ -n "$(tail -c 1 "$TMP")" ]; then printf >&2 "\n"; fi
+else
+  printf >&2 "Copied %s bytes\n" "$BYTES"
+fi

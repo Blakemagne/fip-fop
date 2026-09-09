@@ -4,45 +4,20 @@
 # This script provides a unified interface for reading clipboard contents
 # across different Unix-like operating systems. It outputs clipboard data
 # to stdout, allowing it to be piped to files or other commands.
+#
+# DESIGN NOTE — why this script streams through a temp file instead of a shell
+# variable: an earlier version used `OUTPUT=$($PASTE_CMD)` and then `printf "%s"`.
+# Command substitution strips ALL trailing newlines, so `fop > script.sh` produced a
+# file with no final newline, and NUL bytes could not survive the round trip at all.
+# Streaming clipboard -> file -> stdout keeps the byte stream exact. The one
+# deliberate exception is CR stripping on WSL; see the win) backend below.
 
 # Enable strict error handling
 set -e
 
-# CLIPBOARD BACKEND DETECTION
-# Check for clipboard tools in order of preference:
-# 1. wl-paste (Wayland) - Modern Linux desktop protocol
-# 2. xclip (X11) - Traditional Linux windowing system
-# 3. pbpaste (macOS) - Apple's clipboard utility
-# 4. powershell.exe (WSL) - Windows Subsystem for Linux integration
-
-# Check for Wayland clipboard tool
-if command -v wl-paste >/dev/null 2>&1; then
-  PASTE_CMD="wl-paste"
-  
-# Check for X11 clipboard tool
-elif command -v xclip >/dev/null 2>&1; then
-  # xclip requires explicit selection of clipboard buffer
-  PASTE_CMD="xclip -selection clipboard -out"
-  
-# Check for macOS clipboard tool
-elif command -v pbpaste >/dev/null 2>&1; then
-  PASTE_CMD="pbpaste"
-  
-# Check for WSL (Windows Subsystem for Linux)
-elif grep -qi microsoft /proc/version && command -v powershell.exe >/dev/null 2>&1; then
-  # Use PowerShell to access Windows clipboard
-  # Note: clip.exe only writes to clipboard, doesn't read
-  PASTE_CMD="powershell.exe -NoProfile -Command Get-Clipboard"
-  
-# No suitable clipboard tool found
-else
-  printf >&2 "fop: no clipboard paste helper found (wl-paste, xclip, pbpaste, or powershell.exe)\n"
-  exit 1
-fi
-
-# INPUT HANDLING
-
-# Check for help flag
+# HELP
+# Handled before backend detection so `fop --help` works even on a machine with no
+# clipboard tool installed.
 if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
   printf "fop - paste clipboard contents to stdout\n\n"
   printf "Usage:\n"
@@ -59,6 +34,9 @@ if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
   printf "  fop | head -n 10       Show first 10 lines\n"
   printf "  curl \"\$(fop)\"           Use clipboard URL with curl\n"
   printf "  ssh \"\$(fop)\"            Connect to clipboard hostname\n\n"
+  printf "Exit status:\n"
+  printf "  0  clipboard read successfully\n"
+  printf "  1  clipboard empty, unreadable, or no helper found\n\n"
   printf "Supported platforms:\n"
   printf "  - Linux (X11/Wayland)\n"
   printf "  - macOS\n"
@@ -68,28 +46,175 @@ if [ "$#" -eq 1 ] && { [ "$1" = "-h" ] || [ "$1" = "--help" ]; }; then
   exit 0
 fi
 
-# Check if any arguments provided (invalid usage)
+# Reject arguments other than the help flag handled above
 if [ "$#" -gt 0 ]; then
   printf >&2 "fop: usage: fop\n"
   printf >&2 "Try 'fop --help' for more information.\n"
   exit 1
 fi
 
-# Execute the paste command and capture output
-# Using variable expansion without quotes allows multi-word commands
-OUTPUT=$($PASTE_CMD)
+# CLIPBOARD BACKEND DETECTION
+#
+# Gated on the environment variable that proves the transport actually exists,
+# because an installed binary proves nothing about which display server is
+# reachable. wl-clipboard ships as a dependency of desktop meta-packages on most
+# distros, so it is routinely present in an X11 session, on a bare TTY, and over
+# SSH — where it is selected, hard-fails, and (as an if/elif chain) never falls
+# through to the xclip branch that would have worked.
+#
+# The ungated tail is deliberate: wl-paste falls back to $XDG_RUNTIME_DIR/wayland-0
+# when WAYLAND_DISPLAY is unset (cron, systemd user units, `sudo -i`, a tmux server
+# started before the compositor), so a bare gate would regress those. Every
+# installed helper is still reachable by some branch; nothing that works today stops.
+if [ -n "$WAYLAND_DISPLAY" ] && command -v wl-paste >/dev/null 2>&1; then
+  BACKEND=wl
+elif [ -n "$DISPLAY" ] && command -v xclip >/dev/null 2>&1; then
+  BACKEND=x
+elif [ -n "$DISPLAY" ] && command -v xsel >/dev/null 2>&1; then
+  BACKEND=xsel
+elif command -v pbpaste >/dev/null 2>&1; then
+  BACKEND=mac
+elif grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
+  BACKEND=win
+elif command -v wl-paste >/dev/null 2>&1; then
+  BACKEND=wl
+elif command -v xclip >/dev/null 2>&1; then
+  BACKEND=x
+elif command -v xsel >/dev/null 2>&1; then
+  BACKEND=xsel
+else
+  printf >&2 "fop: no clipboard paste helper found (wl-paste, xclip, xsel, pbpaste, or powershell.exe)\n"
+  exit 1
+fi
 
-# Output clipboard contents to stdout
-printf "%s" "$OUTPUT"
+# Set only by the WSL branch below; cleared here so an exported STRIP_CR from the
+# environment can never trigger CR-stripping on a binary clipboard.
+STRIP_CR=""
 
-# Show success message on stderr only when stdout is redirected (not a TTY)
+# THE BACKEND COMMAND LIVES IN THE POSITIONAL PARAMETERS, NOT A STRING.
+#
+# `set --` is free here because the argument check above already rejected every
+# argument. This is a security boundary, not a style preference: $PLAIN_TYPE below
+# is attacker-controlled text. Any local process can advertise a clipboard offer
+# whose MIME type is literally `text/plain --watch /path/evil`, and an unquoted
+# "$PASTE_CMD" would word-split that into wl-paste's --watch OPTION — executing the
+# attacker's program and leaving a resident watcher behind that re-runs it on every
+# subsequent clipboard change. "$@" expands to exactly these words: no field
+# splitting, no globbing, no IFS involvement.
+case "$BACKEND" in
+  wl)
+    # MIME TYPE SELECTION — the important part on Wayland. A clipboard offer
+    # carries several representations at once; browsers list text/html FIRST, and
+    # bare wl-paste takes the first on offer, so `fop > notes.md` would land raw
+    # <b>markup</b> in the file. The spelling varies (text/plain vs
+    # text/plain;charset=utf-8), so match whatever is actually advertised.
+    #
+    # The `grep -v` drops any type containing a character outside the MIME grammar,
+    # so a hostile entry is SKIPPED and the legitimate text/plain behind it still
+    # wins. Blanking PLAIN_TYPE instead would fall through to the bare-wl-paste
+    # branch and reintroduce the text/html bug precisely in the attacker-controlled
+    # case. It must run before `head -n 1`. The allowed set admits ; and = so that
+    # text/plain;charset=utf-8 still matches.
+    PLAIN_TYPE=$(wl-paste --list-types 2>/dev/null \
+      | grep -i '^text/plain' \
+      | grep -v '[^A-Za-z0-9/.+;=_-]' \
+      | head -n 1 || true)
+    if [ -n "$PLAIN_TYPE" ]; then
+      # --no-newline: don't append a trailing newline the source never had
+      set -- wl-paste --no-newline --type "$PLAIN_TYPE"
+    else
+      # Non-text clipboard (an image, say) — take the default offer as-is
+      set -- wl-paste --no-newline
+    fi
+    ;;
+  x)    set -- xclip -selection clipboard -out ;;
+  xsel) set -- xsel -b -o ;;
+  mac)  set -- pbpaste ;;
+  win)
+    # clip.exe only writes to the clipboard, so reading needs PowerShell.
+    # -Raw returns ONE string, so the console host neither rebuilds the line
+    # structure from a string[] nor terminates the last line, and
+    # [Console]::Out.Write adds no newline of its own. Bare `Get-Clipboard` did
+    # both, so `printf hi | fip; fop` came back as the bytes "hi\r\n" — enough to
+    # produce `bad interpreter: /bin/sh^M`. Windows still stores CRLF internally,
+    # so STRIP_CR normalises below.
+    set -- powershell.exe -NoProfile -NonInteractive -Command '[Console]::Out.Write((Get-Clipboard -Raw))'
+    STRIP_CR=1
+    ;;
+esac
+
+# TEMP FILE SETUP
+# Backend stderr goes to a REGULAR FILE, never a pipe — a daemonising backend that
+# inherits a pipe write end would hang any reader (see fip for the full reasoning).
+# HUP and QUIT are in the trap because dash and busybox ash do NOT run the EXIT trap
+# on an untrapped fatal signal, so a dropped SSH connection would leak clipboard
+# contents to disk. bash happens to, which is why this is easy to miss on Arch.
+TMP=$(mktemp "${TMPDIR:-/tmp}/fop.XXXXXX")
+ERR=$(mktemp "${TMPDIR:-/tmp}/fop.err.XXXXXX")
+CR=""
+trap 'rm -f "$TMP" "$ERR" ${CR:+"$CR"}' EXIT HUP INT QUIT TERM
+
+# READ THE CLIPBOARD
+# A non-zero exit has two very different causes and they must not be conflated: the
+# clipboard is empty, or no display server could be reached at all (plain SSH, bare
+# TTY, detached tmux, container, cron). Reporting the second as the first sends the
+# user off to re-copy something that was never the problem.
+if ! "$@" > "$TMP" 2>"$ERR"; then
+  # wl-paste says "Nothing is copied"; xclip says the target is not available.
+  if [ ! -s "$ERR" ] || grep -qi -e 'nothing is copied' -e 'not available' "$ERR"; then
+    printf >&2 "fop: clipboard is empty\n"
+  else
+    printf >&2 "fop: cannot read clipboard\n"
+    cat "$ERR" >&2
+  fi
+  exit 1
+fi
+
+# WSL LINE-ENDING NORMALISATION — a separate step, deliberately NOT a pipeline.
+# A pipeline's exit status is its LAST command's and tr always succeeds, so piping
+# the backend through tr would permanently mask backend failures on WSL and emit an
+# empty file with status 0. POSIX sh has no pipefail. Tradeoff: this also deletes
+# lone CRs genuinely present in the source, which is the right call for a Windows
+# text clipboard where CRLF is the storage convention. This is the only place in
+# the codebase that knowingly departs from byte fidelity.
+if [ -n "$STRIP_CR" ]; then
+  CR=$(mktemp "${TMPDIR:-/tmp}/fop.cr.XXXXXX")
+  tr -d '\r' < "$TMP" > "$CR"
+  cat "$CR" > "$TMP"
+  rm -f "$CR"
+  CR=""
+fi
+
+# Emptiness is a property of the RESULT, not of the backend's exit status. pbpaste,
+# Get-Clipboard, and `xclip -o` / `xsel -b -o` against an unowned selection all exit
+# 0 with no output, and wl-paste exits 0 with zero bytes after `printf '' | fip`.
+# Testing the file is what makes "empty" mean the same thing on every platform.
+if [ ! -s "$TMP" ]; then
+  printf >&2 "fop: clipboard is empty\n"
+  exit 1
+fi
+
+# EMIT EXACT BYTES
+cat "$TMP"
+
+# FEEDBACK
+# Only when stdout is redirected — printing a summary on top of content the user
+# can already see in their terminal is just noise.
 # -t 1: Test if file descriptor 1 (stdout) is a terminal
 if [ ! -t 1 ]; then
-  if [ ${#OUTPUT} -le 100 ]; then
-    # For short outputs, show a preview
-    printf >&2 "Pasted: %s\n" "$OUTPUT"
+  BYTES=$(wc -c < "$TMP" | tr -d ' ')
+  STRIPPED=$(LC_ALL=C tr -d '\000' < "$TMP" | wc -c | tr -d ' ')
+  if [ "$BYTES" -ne "$STRIPPED" ]; then
+    printf >&2 "Pasted %s bytes (binary)\n" "$BYTES"
+  elif [ "$BYTES" -le 100 ] && [ -t 2 ]; then
+    # The content preview is gated on stderr being a TERMINAL. These tools
+    # routinely carry passwords, and this branch fires exactly when stdout is
+    # redirected — so `fop > secret.pem 2>>run.log` would otherwise write the
+    # payload verbatim into the log, terminal scrollback, or CI output.
+    printf >&2 "Pasted: "
+    cat "$TMP" >&2
+    if [ -n "$(tail -c 1 "$TMP")" ]; then printf >&2 "\n"; fi
   else
-    # For long outputs, just show length
-    printf >&2 "Pasted %d characters\n" ${#OUTPUT}
+    printf >&2 "Pasted %s bytes\n" "$BYTES"
   fi
 fi
